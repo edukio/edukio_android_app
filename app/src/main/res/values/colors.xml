@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="loader">#0A4DA3</color>
+    <color name="barra_status">#FFFFFF</color>
+    <color name="barra_menu">#FFFFFF</color>
+</resources>

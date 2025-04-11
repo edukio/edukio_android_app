@@ -1,0 +1,27 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Tema principal da aplicação -->
+    <style name="Theme.Edukio" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+
+        <!-- Cores da marca -->
+        <item name="colorPrimary">@android:color/black</item>
+        <item name="colorPrimaryVariant">@android:color/black</item>
+        <item name="colorOnPrimary">@android:color/black</item>
+        <item name="colorSecondary">@android:color/black</item>
+        <item name="colorSecondaryVariant">@android:color/black</item>
+        <item name="colorOnSecondary">@android:color/black</item>
+
+        <!-- Cores das barras de status e navegação -->
+        <item name="android:statusBarColor">@color/barra_status</item>
+        <item name="android:navigationBarColor">@color/barra_menu</item>
+    </style>
+
+    <!-- Tema da splash screen -->
+    <style name="Theme.Edukio.Splash" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:statusBarColor">@android:color/white</item>
+        <item name="android:navigationBarColor">@android:color/white</item>
+    </style>
+
+</resources>
