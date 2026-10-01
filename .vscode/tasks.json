@@ -1,0 +1,166 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Gradle: Compilar APK Debug",
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": {
+        "command": ".\\gradlew.bat"
+      },
+      "args": [
+        "assembleDebug"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Gradle: Instalar Debug",
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": {
+        "command": ".\\gradlew.bat"
+      },
+      "args": [
+        "installDebug"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Abrir Edukio",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "shell",
+        "am",
+        "start",
+        "-n",
+        "com.edukio.app/.MainActivity"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Compilar, instalar e abrir",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Gradle: Instalar Debug",
+        "Android: Abrir Edukio"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Gradle: Limpar projeto",
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": {
+        "command": ".\\gradlew.bat"
+      },
+      "args": [
+        "clean"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Gradle: Gerar APK Release",
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": {
+        "command": ".\\gradlew.bat"
+      },
+      "args": [
+        "assembleRelease"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Gradle: Gerar AAB Release",
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": {
+        "command": ".\\gradlew.bat"
+      },
+      "args": [
+        "bundleRelease"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ADB: Listar dispositivos",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "devices",
+        "-l"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ADB: Limpar Logcat",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "logcat",
+        "-c"
+      ],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ADB: Ver Logcat",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "logcat",
+        "-v",
+        "color"
+      ],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}
