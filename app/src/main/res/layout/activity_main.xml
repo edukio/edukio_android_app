@@ -2,21 +2,73 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/container"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="#FFFFFF">
 
-    <!-- WebView invisível até terminar o carregamento -->
     <WebView
         android:id="@+id/webview"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="invisible" />
 
-    <!-- ProgressBar centralizado, visível até a WebView carregar -->
     <ProgressBar
         android:id="@+id/progressBar"
         style="@android:style/Widget.DeviceDefault.Light.ProgressBar.Large"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:indeterminateTint="@color/loader"/>
+        android:indeterminateTint="@color/loader" />
+
+    <LinearLayout
+        android:id="@+id/errorContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FFFFFF"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="88dp"
+            android:layout_height="88dp"
+            android:contentDescription="Edukio"
+            android:src="@mipmap/ic_launcher" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:gravity="center"
+            android:text="Não foi possível abrir o Edukio"
+            android:textColor="#1F2937"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/errorMessage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp"
+            android:maxWidth="420dp"
+            android:text="Verifique sua conexão com a internet e tente novamente."
+            android:textColor="#6B7280"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/btnRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:minWidth="180dp"
+            android:paddingLeft="24dp"
+            android:paddingRight="24dp"
+            android:text="Tentar novamente"
+            android:textAllCaps="false"
+            android:textSize="16sp" />
+
+    </LinearLayout>
+
 </FrameLayout>
