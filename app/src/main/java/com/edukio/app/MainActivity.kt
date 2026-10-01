@@ -13,8 +13,11 @@ import android.os.*
 import android.provider.MediaStore
 import android.view.View
 import android.webkit.*
+import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,16 +41,19 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
+    private lateinit var errorContainer: LinearLayout
+    private lateinit var errorMessage: TextView
+    private lateinit var retryButton: Button
     private val handler = Handler(Looper.getMainLooper())
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraImageUri: Uri? = null
 
-    // Controle de saúde/recuperação do WebView.
     private var waitingForAppReady = true
     private var recoveryStage = 0
     private var recoveryInProgress = false
     private var mainFrameHasExternalFailure = false
+    private var errorScreenVisible = false
 
     private val startupWatchdog = Runnable {
         if (waitingForAppReady && !recoveryInProgress && !mainFrameHasExternalFailure) {
@@ -78,10 +84,20 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webview)
         progressBar = findViewById(R.id.progressBar)
+        errorContainer = findViewById(R.id.errorContainer)
+        errorMessage = findViewById(R.id.errorMessage)
+        retryButton = findViewById(R.id.btnRetry)
 
         webView.setBackgroundColor(Color.WHITE)
         webView.visibility = View.INVISIBLE
         progressBar.visibility = View.VISIBLE
+        errorContainer.visibility = View.GONE
+
+        retryButton.setOnClickListener {
+            hideNativeErrorScreen()
+            showLoadingScreen()
+            startHealthCheckedLoad()
+        }
 
         WindowCompat.getInsetsController(window, window.decorView)?.apply {
             isAppearanceLightStatusBars = true
@@ -158,15 +174,12 @@ class MainActivity : AppCompatActivity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
 
-                if (!waitingForAppReady || url.isNullOrBlank()) {
-                    return
-                }
+                if (!waitingForAppReady || url.isNullOrBlank()) return
 
                 val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return
                 val host = uri.host.orEmpty()
 
                 if (isGoogleAuthHost(host)) {
-                    // Não considerar o tempo gasto pelo usuário na autenticação do Google.
                     cancelStartupWatchdog()
                     return
                 }
@@ -180,10 +193,14 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
 
+                if (errorScreenVisible) return
+
                 handler.postDelayed({
-                    progressBar.visibility = View.GONE
-                    webView.visibility = View.VISIBLE
-                    checkAndRequestPermissions()
+                    if (!errorScreenVisible) {
+                        progressBar.visibility = View.GONE
+                        webView.visibility = View.VISIBLE
+                        checkAndRequestPermissions()
+                    }
                 }, 300)
             }
 
@@ -203,10 +220,17 @@ class MainActivity : AppCompatActivity() {
             ) {
                 super.onReceivedError(view, request, error)
 
-                if (request?.isForMainFrame == true && isConnectivityError(error?.errorCode)) {
-                    // Falha de internet/DNS/SSL não deve apagar os dados do usuário.
+                if (request?.isForMainFrame == true) {
                     mainFrameHasExternalFailure = true
                     cancelStartupWatchdog()
+
+                    val message = if (isConnectivityError(error?.errorCode)) {
+                        "Não foi possível conectar ao Edukio. Verifique sua conexão com a internet e tente novamente."
+                    } else {
+                        "Não foi possível carregar o Edukio. Tente novamente em alguns instantes."
+                    }
+
+                    showNativeErrorScreen(message)
                 }
             }
 
@@ -221,10 +245,25 @@ class MainActivity : AppCompatActivity() {
                     request?.isForMainFrame == true &&
                     (errorResponse?.statusCode ?: 0) >= 500
                 ) {
-                    // Erro do servidor não deve causar logout/limpeza automática.
                     mainFrameHasExternalFailure = true
                     cancelStartupWatchdog()
+                    showNativeErrorScreen(
+                        "O Edukio está temporariamente indisponível. Tente novamente em alguns instantes."
+                    )
                 }
+            }
+
+            override fun onReceivedSslError(
+                view: WebView?,
+                handler: SslErrorHandler?,
+                error: android.net.http.SslError?
+            ) {
+                handler?.cancel()
+                mainFrameHasExternalFailure = true
+                cancelStartupWatchdog()
+                showNativeErrorScreen(
+                    "Não foi possível estabelecer uma conexão segura com o Edukio. Tente novamente mais tarde."
+                )
             }
 
             override fun onRenderProcessGone(
@@ -283,6 +322,11 @@ class MainActivity : AppCompatActivity() {
                 view.context.startActivity(intent)
             } catch (e: Exception) {
                 e.printStackTrace()
+                Toast.makeText(
+                    this,
+                    "Não foi possível abrir este link.",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             true
         }
@@ -301,6 +345,7 @@ class MainActivity : AppCompatActivity() {
         recoveryStage = 0
         recoveryInProgress = false
         mainFrameHasExternalFailure = false
+        errorScreenVisible = false
         webView.loadUrl(START_URL)
     }
 
@@ -324,7 +369,6 @@ class MainActivity : AppCompatActivity() {
     private fun handleStartupTimeout() {
         when (recoveryStage) {
             0 -> {
-                // Primeira falha: apenas tenta novamente, preservando sessão/dados.
                 recoveryStage = 1
                 mainFrameHasExternalFailure = false
                 webView.reload()
@@ -332,22 +376,40 @@ class MainActivity : AppCompatActivity() {
             }
 
             1 -> {
-                // Segunda falha: limpa os dados locais do Edukio e reinicia.
                 recoveryStage = 2
                 clearEdukioBrowsingDataAndReload()
             }
 
             else -> {
-                // Evita ciclo infinito de limpeza/reload.
                 waitingForAppReady = false
                 cancelStartupWatchdog()
-                Toast.makeText(
-                    this,
-                    "Não foi possível iniciar o Edukio. Verifique sua conexão e tente abrir o aplicativo novamente.",
-                    Toast.LENGTH_LONG
-                ).show()
+                showNativeErrorScreen(
+                    "Não foi possível iniciar o Edukio. Verifique sua conexão e tente novamente."
+                )
             }
         }
+    }
+
+    private fun showLoadingScreen() {
+        errorScreenVisible = false
+        errorContainer.visibility = View.GONE
+        webView.visibility = View.INVISIBLE
+        progressBar.visibility = View.VISIBLE
+    }
+
+    private fun showNativeErrorScreen(message: String) {
+        runOnUiThread {
+            errorScreenVisible = true
+            progressBar.visibility = View.GONE
+            webView.visibility = View.INVISIBLE
+            errorMessage.text = message
+            errorContainer.visibility = View.VISIBLE
+        }
+    }
+
+    private fun hideNativeErrorScreen() {
+        errorScreenVisible = false
+        errorContainer.visibility = View.GONE
     }
 
     private fun clearEdukioBrowsingDataAndReload() {
@@ -365,6 +427,10 @@ class MainActivity : AppCompatActivity() {
             recoveryInProgress = false
             waitingForAppReady = true
             mainFrameHasExternalFailure = false
+            errorScreenVisible = false
+            errorContainer.visibility = View.GONE
+            progressBar.visibility = View.VISIBLE
+            webView.visibility = View.INVISIBLE
 
             val recoveryUrl = "$START_URL&recovery=${System.currentTimeMillis()}"
             webView.loadUrl(recoveryUrl)
@@ -372,8 +438,6 @@ class MainActivity : AppCompatActivity() {
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA)) {
             try {
-                // Inclui cache de rede, cookies, armazenamento JavaScript
-                // e service workers nas WebViews compatíveis.
                 WebStorageCompat.deleteBrowsingDataForSite(
                     WebStorage.getInstance(),
                     EDUKIO_SITE,
@@ -385,7 +449,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Fallback para Android System WebView sem DELETE_BROWSING_DATA.
         CookieManager.getInstance().removeAllCookies {
             CookieManager.getInstance().flush()
             WebStorage.getInstance().deleteAllData()
@@ -528,6 +591,13 @@ class MainActivity : AppCompatActivity() {
 
     private val backPressedCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
+            if (errorScreenVisible) {
+                hideNativeErrorScreen()
+                showLoadingScreen()
+                startHealthCheckedLoad()
+                return
+            }
+
             if (webView.canGoBack()) {
                 webView.goBack()
             } else {
