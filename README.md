@@ -18,8 +18,8 @@ As principais tarefas disponíveis são:
 - `Gradle: Instalar Debug`
 - `Android: Compilar, instalar e abrir`
 - `Gradle: Limpar projeto`
-- `Gradle: Gerar APK Release`
-- `Gradle: Gerar AAB Release`
+- `Gradle: Gerar APK Release assinado`
+- `Gradle: Gerar AAB Release assinado`
 - `ADB: Listar dispositivos`
 - `ADB: Limpar Logcat`
 - `ADB: Ver Logcat`
@@ -207,6 +207,107 @@ Terminal > Run Task... > ADB: Limpar Logcat
 ```
 
 Depois abra novamente o Logcat e reproduza o problema no aplicativo.
+
+
+## Assinatura de APK/AAB Release no VS Code
+
+Se você usava **Generate Signed Bundle / APK** no Android Studio, o projeto agora permite fazer o mesmo pelo VS Code.
+
+A chave de assinatura usada para publicar atualizações na Google Play deve ser a **mesma chave/keystore que já era usada anteriormente**. Não crie uma nova chave para substituir a existente sem saber exatamente o impacto, pois uma chave diferente pode impedir a publicação de uma atualização do mesmo aplicativo.
+
+### 1. Localizar o keystore existente
+
+Você precisa do arquivo usado anteriormente no Android Studio. Normalmente ele possui extensão:
+
+```text
+.jks
+```
+
+ou:
+
+```text
+.keystore
+```
+
+Também será necessário saber o **alias da chave** que você selecionava na tela de geração do aplicativo assinado.
+
+### 2. Criar o arquivo local de configuração
+
+Na raiz do projeto existe:
+
+```text
+keystore.properties.example
+```
+
+Faça uma cópia com o nome:
+
+```text
+keystore.properties
+```
+
+Edite apenas:
+
+```properties
+storeFile=C:/caminho/para/seu/arquivo/edukio-release.jks
+keyAlias=seu_alias
+```
+
+No Windows, é recomendado usar barras `/` no caminho.
+
+O arquivo `keystore.properties` é ignorado pelo Git e **não deve ser enviado para o GitHub**.
+
+Os arquivos `.jks` e `.keystore` também estão no `.gitignore`.
+
+### 3. As senhas não ficam salvas no projeto
+
+As senhas não são armazenadas em `keystore.properties`, no Gradle ou no GitHub.
+
+Ao executar uma tarefa de release, o VS Code solicitará:
+
+1. **Senha do keystore**;
+2. **Senha da chave/alias**.
+
+Os campos são ocultos. Se você sempre usou a mesma senha para ambos, digite a mesma senha nas duas perguntas.
+
+### 4. Gerar um AAB assinado para a Google Play
+
+No VS Code:
+
+```text
+Terminal > Run Task... > Gradle: Gerar AAB Release assinado
+```
+
+O arquivo será gerado normalmente em:
+
+```text
+app/build/outputs/bundle/release/app-release.aab
+```
+
+### 5. Gerar um APK Release assinado
+
+No VS Code:
+
+```text
+Terminal > Run Task... > Gradle: Gerar APK Release assinado
+```
+
+O APK será gerado normalmente em:
+
+```text
+app/build/outputs/apk/release/app-release.apk
+```
+
+### Segurança
+
+Nunca envie para o GitHub:
+
+- o arquivo `.jks` ou `.keystore`;
+- `keystore.properties`;
+- senha do keystore;
+- senha da chave.
+
+Faça backup seguro do keystore existente. Para aplicativos já publicados, perder a chave de assinatura pode causar problemas para publicar futuras atualizações.
+
 
 ## Observação
 
