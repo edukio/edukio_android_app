@@ -83,7 +83,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Gradle: Gerar APK Release",
+      "label": "Gradle: Gerar APK Release assinado",
       "type": "shell",
       "command": "./gradlew",
       "windows": {
@@ -92,6 +92,12 @@
       "args": [
         "assembleRelease"
       ],
+      "options": {
+        "env": {
+          "EDUKIO_STORE_PASSWORD": "${input:storePassword}",
+          "EDUKIO_KEY_PASSWORD": "${input:keyPassword}"
+        }
+      },
       "presentation": {
         "reveal": "always",
         "panel": "shared",
@@ -100,7 +106,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Gradle: Gerar AAB Release",
+      "label": "Gradle: Gerar AAB Release assinado",
       "type": "shell",
       "command": "./gradlew",
       "windows": {
@@ -109,6 +115,12 @@
       "args": [
         "bundleRelease"
       ],
+      "options": {
+        "env": {
+          "EDUKIO_STORE_PASSWORD": "${input:storePassword}",
+          "EDUKIO_KEY_PASSWORD": "${input:keyPassword}"
+        }
+      },
       "presentation": {
         "reveal": "always",
         "panel": "shared",
@@ -161,6 +173,20 @@
         "clear": true
       },
       "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "storePassword",
+      "type": "promptString",
+      "description": "Senha do keystore (.jks/.keystore)",
+      "password": true
+    },
+    {
+      "id": "keyPassword",
+      "type": "promptString",
+      "description": "Senha da chave/alias (se for a mesma, digite a mesma senha)",
+      "password": true
     }
   ]
 }
