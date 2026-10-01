@@ -15,6 +15,7 @@ import android.view.View
 import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.ProgressBar
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -23,9 +24,17 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.webkit.WebStorageCompat
+import androidx.webkit.WebViewFeature
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val START_URL = "https://app.edukio.com/?app_version=2.2"
+        private const val EDUKIO_SITE = "https://app.edukio.com"
+        private const val STARTUP_TIMEOUT_MS = 20_000L
+    }
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
@@ -33,6 +42,18 @@ class MainActivity : AppCompatActivity() {
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraImageUri: Uri? = null
+
+    // Controle de saúde/recuperação do WebView.
+    private var waitingForAppReady = true
+    private var recoveryStage = 0
+    private var recoveryInProgress = false
+    private var mainFrameHasExternalFailure = false
+
+    private val startupWatchdog = Runnable {
+        if (waitingForAppReady && !recoveryInProgress && !mainFrameHasExternalFailure) {
+            handleStartupTimeout()
+        }
+    }
 
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -52,21 +73,16 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Edge-to-edge moderno
         WindowCompat.setDecorFitsSystemWindows(window, false)
-
-        // Usa o layout XML
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webview)
         progressBar = findViewById(R.id.progressBar)
 
-        // Corrige o flash preto com fundo branco invisível até carregar
         webView.setBackgroundColor(Color.WHITE)
         webView.visibility = View.INVISIBLE
         progressBar.visibility = View.VISIBLE
 
-        // Ícones escuros na barra de status/navegação
         WindowCompat.getInsetsController(window, window.decorView)?.apply {
             isAppearanceLightStatusBars = true
             isAppearanceLightNavigationBars = true
@@ -80,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupWebView()
-        webView.loadUrl("https://app.edukio.com/?app_version=2.2")
+        startHealthCheckedLoad()
 
         onBackPressedDispatcher.addCallback(this, backPressedCallback)
     }
@@ -116,7 +132,6 @@ class MainActivity : AppCompatActivity() {
                 newFilePathCallback: ValueCallback<Array<Uri>>?,
                 fileChooserParams: FileChooserParams?
             ): Boolean {
-                // Cancela qualquer seleção anterior que ainda esteja pendente.
                 filePathCallback?.onReceiveValue(null)
                 filePathCallback = newFilePathCallback
 
@@ -139,6 +154,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+
+                if (!waitingForAppReady || url.isNullOrBlank()) {
+                    return
+                }
+
+                val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return
+                val host = uri.host.orEmpty()
+
+                if (isGoogleAuthHost(host)) {
+                    // Não considerar o tempo gasto pelo usuário na autenticação do Google.
+                    cancelStartupWatchdog()
+                    return
+                }
+
+                if (isEdukioHost(host)) {
+                    mainFrameHasExternalFailure = false
+                    scheduleStartupWatchdog()
+                }
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
 
@@ -150,18 +188,53 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val url = request.url.toString()
-                return if (url.contains("edukio.com") || url.contains("accounts.google.com") || url.contains("accounts.youtube.com")) {
-                    false
-                } else {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        view.context.startActivity(intent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                    true
+                return handleNavigation(view, request.url)
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                return handleNavigation(view, Uri.parse(url))
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                super.onReceivedError(view, request, error)
+
+                if (request?.isForMainFrame == true && isConnectivityError(error?.errorCode)) {
+                    // Falha de internet/DNS/SSL não deve apagar os dados do usuário.
+                    mainFrameHasExternalFailure = true
+                    cancelStartupWatchdog()
                 }
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                errorResponse: WebResourceResponse?
+            ) {
+                super.onReceivedHttpError(view, request, errorResponse)
+
+                if (
+                    request?.isForMainFrame == true &&
+                    (errorResponse?.statusCode ?: 0) >= 500
+                ) {
+                    // Erro do servidor não deve causar logout/limpeza automática.
+                    mainFrameHasExternalFailure = true
+                    cancelStartupWatchdog()
+                }
+            }
+
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: RenderProcessGoneDetail?
+            ): Boolean {
+                cancelStartupWatchdog()
+                view?.destroy()
+                handler.post { recreate() }
+                return true
             }
         }
 
@@ -190,6 +263,147 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun handleNavigation(view: WebView, uri: Uri): Boolean {
+        if (uri.scheme == "edukio" && uri.host == "app-ready") {
+            markAppReady()
+            return true
+        }
+
+        val host = uri.host.orEmpty()
+
+        return if (
+            isEdukioHost(host) ||
+            isGoogleAuthHost(host) ||
+            host == "accounts.youtube.com"
+        ) {
+            false
+        } else {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, uri)
+                view.context.startActivity(intent)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            true
+        }
+    }
+
+    private fun isEdukioHost(host: String): Boolean {
+        return host == "edukio.com" || host.endsWith(".edukio.com")
+    }
+
+    private fun isGoogleAuthHost(host: String): Boolean {
+        return host == "accounts.google.com"
+    }
+
+    private fun startHealthCheckedLoad() {
+        waitingForAppReady = true
+        recoveryStage = 0
+        recoveryInProgress = false
+        mainFrameHasExternalFailure = false
+        webView.loadUrl(START_URL)
+    }
+
+    private fun markAppReady() {
+        waitingForAppReady = false
+        recoveryStage = 0
+        recoveryInProgress = false
+        mainFrameHasExternalFailure = false
+        cancelStartupWatchdog()
+    }
+
+    private fun scheduleStartupWatchdog() {
+        cancelStartupWatchdog()
+        handler.postDelayed(startupWatchdog, STARTUP_TIMEOUT_MS)
+    }
+
+    private fun cancelStartupWatchdog() {
+        handler.removeCallbacks(startupWatchdog)
+    }
+
+    private fun handleStartupTimeout() {
+        when (recoveryStage) {
+            0 -> {
+                // Primeira falha: apenas tenta novamente, preservando sessão/dados.
+                recoveryStage = 1
+                mainFrameHasExternalFailure = false
+                webView.reload()
+                scheduleStartupWatchdog()
+            }
+
+            1 -> {
+                // Segunda falha: limpa os dados locais do Edukio e reinicia.
+                recoveryStage = 2
+                clearEdukioBrowsingDataAndReload()
+            }
+
+            else -> {
+                // Evita ciclo infinito de limpeza/reload.
+                waitingForAppReady = false
+                cancelStartupWatchdog()
+                Toast.makeText(
+                    this,
+                    "Não foi possível iniciar o Edukio. Verifique sua conexão e tente abrir o aplicativo novamente.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    private fun clearEdukioBrowsingDataAndReload() {
+        if (recoveryInProgress) return
+
+        recoveryInProgress = true
+        cancelStartupWatchdog()
+
+        val reloadAfterCleanup = Runnable {
+            webView.clearCache(true)
+            webView.clearHistory()
+            @Suppress("DEPRECATION")
+            webView.clearFormData()
+
+            recoveryInProgress = false
+            waitingForAppReady = true
+            mainFrameHasExternalFailure = false
+
+            val recoveryUrl = "$START_URL&recovery=${System.currentTimeMillis()}"
+            webView.loadUrl(recoveryUrl)
+        }
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA)) {
+            try {
+                // Inclui cache de rede, cookies, armazenamento JavaScript
+                // e service workers nas WebViews compatíveis.
+                WebStorageCompat.deleteBrowsingDataForSite(
+                    WebStorage.getInstance(),
+                    EDUKIO_SITE,
+                    reloadAfterCleanup
+                )
+                return
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // Fallback para Android System WebView sem DELETE_BROWSING_DATA.
+        CookieManager.getInstance().removeAllCookies {
+            CookieManager.getInstance().flush()
+            WebStorage.getInstance().deleteAllData()
+            reloadAfterCleanup.run()
+        }
+    }
+
+    private fun isConnectivityError(errorCode: Int?): Boolean {
+        return errorCode in setOf(
+            ERROR_HOST_LOOKUP,
+            ERROR_CONNECT,
+            ERROR_TIMEOUT,
+            ERROR_IO,
+            ERROR_PROXY_AUTHENTICATION,
+            ERROR_FAILED_SSL_HANDSHAKE
+        )
+    }
+
     private fun launchFileChooser(fileChooserParams: WebChromeClient.FileChooserParams?) {
         val fileIntent = try {
             fileChooserParams?.createIntent() ?: defaultFileIntent()
@@ -209,13 +423,11 @@ class MainActivity : AppCompatActivity() {
             null
         }
 
-        // Se a página usar capture="camera", abre a câmera diretamente.
         if (fileChooserParams?.isCaptureEnabled == true && cameraIntent != null) {
             fileChooserLauncher.launch(cameraIntent)
             return
         }
 
-        // Caso normal: abre o seletor de arquivos e oferece a câmera como opção extra.
         val chooserIntent = Intent(Intent.ACTION_CHOOSER).apply {
             putExtra(Intent.EXTRA_INTENT, fileIntent)
             putExtra(Intent.EXTRA_TITLE, "Selecionar arquivo")
@@ -323,5 +535,10 @@ class MainActivity : AppCompatActivity() {
                 onBackPressedDispatcher.onBackPressed()
             }
         }
+    }
+
+    override fun onDestroy() {
+        cancelStartupWatchdog()
+        super.onDestroy()
     }
 }
