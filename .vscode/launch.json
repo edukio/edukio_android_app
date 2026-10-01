@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Android: instalar e abrir Edukio (sem debugger)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "adb shell am start -n com.edukio.app/.MainActivity",
+      "preLaunchTask": "Gradle: Instalar Debug"
+    }
+  ]
+}
