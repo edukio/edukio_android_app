@@ -3,28 +3,51 @@ package com.edukio.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.*
+import android.provider.MediaStore
 import android.view.View
 import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private val handler = Handler(Looper.getMainLooper())
+
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraImageUri: Uri? = null
+
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = filePathCallback ?: return@registerForActivityResult
+
+            val uris = if (result.resultCode == RESULT_OK) {
+                extractSelectedUris(result.data)
+            } else {
+                null
+            }
+
+            callback.onReceiveValue(uris)
+            filePathCallback = null
+            cameraImageUri = null
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,7 +97,7 @@ class MainActivity : AppCompatActivity() {
 
         webView.settings.javaScriptEnabled = true
         webView.settings.allowFileAccess = false
-        webView.settings.allowContentAccess = false
+        webView.settings.allowContentAccess = true
         webView.settings.safeBrowsingEnabled = true
 
         webView.removeJavascriptInterface("searchBoxJavaBridge_")
@@ -85,6 +108,32 @@ class MainActivity : AppCompatActivity() {
                     request.grant(request.resources)
                 } else {
                     super.onPermissionRequest(request)
+                }
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView?,
+                newFilePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                // Cancela qualquer seleção anterior que ainda esteja pendente.
+                filePathCallback?.onReceiveValue(null)
+                filePathCallback = newFilePathCallback
+
+                if (newFilePathCallback == null) {
+                    filePathCallback = null
+                    return false
+                }
+
+                return try {
+                    launchFileChooser(fileChooserParams)
+                    true
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    filePathCallback?.onReceiveValue(null)
+                    filePathCallback = null
+                    cameraImageUri = null
+                    false
                 }
             }
         }
@@ -139,6 +188,118 @@ class MainActivity : AppCompatActivity() {
             val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             dm.enqueue(request)
         }
+    }
+
+    private fun launchFileChooser(fileChooserParams: WebChromeClient.FileChooserParams?) {
+        val fileIntent = try {
+            fileChooserParams?.createIntent() ?: defaultFileIntent()
+        } catch (e: Exception) {
+            defaultFileIntent()
+        }.apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+
+            if (fileChooserParams?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+        }
+
+        val cameraIntent = if (acceptsImages(fileChooserParams) && hasCameraPermission()) {
+            createCameraIntent()
+        } else {
+            null
+        }
+
+        // Se a página usar capture="camera", abre a câmera diretamente.
+        if (fileChooserParams?.isCaptureEnabled == true && cameraIntent != null) {
+            fileChooserLauncher.launch(cameraIntent)
+            return
+        }
+
+        // Caso normal: abre o seletor de arquivos e oferece a câmera como opção extra.
+        val chooserIntent = Intent(Intent.ACTION_CHOOSER).apply {
+            putExtra(Intent.EXTRA_INTENT, fileIntent)
+            putExtra(Intent.EXTRA_TITLE, "Selecionar arquivo")
+
+            if (cameraIntent != null) {
+                putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
+            }
+        }
+
+        fileChooserLauncher.launch(chooserIntent)
+    }
+
+    private fun defaultFileIntent(): Intent {
+        return Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+    }
+
+    private fun acceptsImages(fileChooserParams: WebChromeClient.FileChooserParams?): Boolean {
+        val acceptTypes = fileChooserParams?.acceptTypes
+            ?.flatMap { it.split(",") }
+            ?.map { it.trim().lowercase() }
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
+
+        return acceptTypes.isEmpty() ||
+            acceptTypes.any {
+                it == "*/*" ||
+                it.startsWith("image/") ||
+                it in setOf(".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif")
+            }
+    }
+
+    private fun hasCameraPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun createCameraIntent(): Intent? {
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
+            return null
+        }
+
+        val photoFile = File.createTempFile(
+            "edukio_camera_",
+            ".jpg",
+            cacheDir
+        )
+
+        val photoUri = FileProvider.getUriForFile(
+            this,
+            packageName + ".fileprovider",
+            photoFile
+        )
+
+        cameraImageUri = photoUri
+
+        return Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            clipData = ClipData.newRawUri("Edukio camera", photoUri)
+        }
+    }
+
+    private fun extractSelectedUris(data: Intent?): Array<Uri>? {
+        val clipData = data?.clipData
+        if (clipData != null && clipData.itemCount > 0) {
+            return Array(clipData.itemCount) { index ->
+                clipData.getItemAt(index).uri
+            }
+        }
+
+        data?.data?.let { selectedUri ->
+            return arrayOf(selectedUri)
+        }
+
+        cameraImageUri?.let { capturedImage ->
+            return arrayOf(capturedImage)
+        }
+
+        return null
     }
 
     private fun checkAndRequestPermissions() {
