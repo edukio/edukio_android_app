@@ -195,6 +195,13 @@ class MainActivity : AppCompatActivity() {
 
                 if (errorScreenVisible) return
 
+                val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("")
+                if (isEdukioHost(host)) {
+                    checkWebAppReady(view)
+                    handler.postDelayed({ checkWebAppReady(view) }, 500)
+                    handler.postDelayed({ checkWebAppReady(view) }, 1500)
+                }
+
                 handler.postDelayed({
                     if (!errorScreenVisible) {
                         progressBar.visibility = View.GONE
@@ -347,6 +354,18 @@ class MainActivity : AppCompatActivity() {
         mainFrameHasExternalFailure = false
         errorScreenVisible = false
         webView.loadUrl(START_URL)
+    }
+
+    private fun checkWebAppReady(view: WebView?) {
+        if (!waitingForAppReady || view == null || errorScreenVisible) return
+
+        view.evaluateJavascript(
+            "(window.edukioAppReady === true).toString()"
+        ) { result ->
+            if (result == "\\"true\\"" || result == "true") {
+                markAppReady()
+            }
+        }
     }
 
     private fun markAppReady() {
