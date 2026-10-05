@@ -37,8 +37,11 @@ class MainActivity : AppCompatActivity() {
         private const val START_URL = "https://app.edukio.com/?app_version=2.2"
         private const val EDUKIO_SITE = "https://app.edukio.com"
         private const val STARTUP_TIMEOUT_MS = 20_000L
+        private const val LIGHT_SYSTEM_BAR_COLOR = "#FFFFFF"
+        private const val DARK_SYSTEM_BAR_COLOR = "#0F172A"
     }
 
+    private lateinit var rootContainer: FrameLayout
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private lateinit var errorContainer: LinearLayout
@@ -82,6 +85,7 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
 
+        rootContainer = findViewById(R.id.container)
         webView = findViewById(R.id.webview)
         progressBar = findViewById(R.id.progressBar)
         errorContainer = findViewById(R.id.errorContainer)
@@ -99,13 +103,11 @@ class MainActivity : AppCompatActivity() {
             startHealthCheckedLoad()
         }
 
-        WindowCompat.getInsetsController(window, window.decorView)?.apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
-        }
+        // Aplica imediatamente o tema já salvo pelo site para evitar flash
+        // branco nas barras quando o usuário usa o tema escuro.
+        applySystemBarTheme(readDarkThemeFromCookie())
 
-        val container = findViewById<FrameLayout>(R.id.container)
-        ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(rootContainer) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
@@ -133,6 +135,10 @@ class MainActivity : AppCompatActivity() {
         webView.settings.safeBrowsingEnabled = true
 
         webView.removeJavascriptInterface("searchBoxJavaBridge_")
+
+        // Ponte mínima para o tema: o site apenas informa se o body está
+        // com a classe theme-dark. Nenhum dado sensível é exposto.
+        webView.addJavascriptInterface(ThemeBridge(), "EdukioThemeBridge")
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
@@ -197,6 +203,7 @@ class MainActivity : AppCompatActivity() {
 
                 val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("")
                 if (isEdukioHost(host)) {
+                    installThemeObserver(view)
                     checkWebAppReady(view)
                     handler.postDelayed({ checkWebAppReady(view) }, 500)
                     handler.postDelayed({ checkWebAppReady(view) }, 1500)
@@ -345,6 +352,97 @@ class MainActivity : AppCompatActivity() {
 
     private fun isGoogleAuthHost(host: String): Boolean {
         return host == "accounts.google.com"
+    }
+
+    private inner class ThemeBridge {
+        @JavascriptInterface
+        fun setDarkMode(isDark: Boolean) {
+            runOnUiThread {
+                val currentHost = runCatching {
+                    Uri.parse(webView.url.orEmpty()).host.orEmpty()
+                }.getOrDefault("")
+
+                // Aceita a alteração somente enquanto a página principal
+                // carregada no WebView pertence ao Edukio.
+                if (isEdukioHost(currentHost)) {
+                    applySystemBarTheme(isDark)
+                }
+            }
+        }
+    }
+
+    private fun installThemeObserver(view: WebView?) {
+        if (view == null) return
+
+        view.evaluateJavascript(
+            """
+            (function() {
+                if (!document.body || !window.EdukioThemeBridge) return;
+
+                function syncEdukioAndroidTheme() {
+                    window.EdukioThemeBridge.setDarkMode(
+                        document.body.classList.contains('theme-dark')
+                    );
+                }
+
+                syncEdukioAndroidTheme();
+
+                if (window.__edukioAndroidThemeObserver) {
+                    window.__edukioAndroidThemeObserver.disconnect();
+                }
+
+                window.__edukioAndroidThemeObserver = new MutationObserver(function(mutations) {
+                    for (var i = 0; i < mutations.length; i++) {
+                        if (mutations[i].type === 'attributes' &&
+                            mutations[i].attributeName === 'class') {
+                            syncEdukioAndroidTheme();
+                            break;
+                        }
+                    }
+                });
+
+                window.__edukioAndroidThemeObserver.observe(document.body, {
+                    attributes: true,
+                    attributeFilter: ['class']
+                });
+            })();
+            """.trimIndent(),
+            null
+        )
+    }
+
+    private fun readDarkThemeFromCookie(): Boolean {
+        val cookies = CookieManager.getInstance().getCookie(EDUKIO_SITE) ?: return false
+
+        return cookies
+            .split(";")
+            .map { it.trim() }
+            .any { it.equals("edukio_tema=dark", ignoreCase = true) }
+    }
+
+    private fun applySystemBarTheme(isDark: Boolean) {
+        val barColor = Color.parseColor(
+            if (isDark) DARK_SYSTEM_BAR_COLOR else LIGHT_SYSTEM_BAR_COLOR
+        )
+
+        // O container ocupa também as áreas edge-to-edge. Isso garante a
+        // cor correta atrás das barras inclusive em versões recentes do Android.
+        rootContainer.setBackgroundColor(barColor)
+
+        @Suppress("DEPRECATION")
+        window.statusBarColor = barColor
+
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = barColor
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
+
+        WindowCompat.getInsetsController(window, window.decorView)?.apply {
+            isAppearanceLightStatusBars = !isDark
+            isAppearanceLightNavigationBars = !isDark
+        }
     }
 
     private fun startHealthCheckedLoad() {
