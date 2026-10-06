@@ -9,14 +9,14 @@ Aplicativo Android do Edukio, escrito em Kotlin e baseado em WebView. Este guia 
 | **VS Code** | Estável | [Baixar Visual Studio Code](https://code.visualstudio.com/download) |
 | **Git** | Atual | [Git for Windows](https://git-scm.com/downloads/win) |
 | **Java JDK** | **JDK 17** (recomendado: Temurin 17) | [Eclipse Temurin](https://adoptium.net/temurin/releases/?version=17) |
-| **Android SDK** | **API 35** | [Android SDK Command-line Tools (na seção "Command line tools only")](https://developer.android.com/studio#command-line-tools-only) |
-| **Android SDK Build-Tools** | **35.0.0** | Instalado com o gerenciador do SDK |
+| **Android SDK** | **API 36 (Android 16)** | [Android SDK Command-line Tools (na seção "Command line tools only")](https://developer.android.com/studio#command-line-tools-only) |
+| **Android SDK Build-Tools** | **35.0.0** (mínimo exigido pelo AGP; 36.x opcional) | Instalado com o gerenciador do SDK |
 | **Android SDK Platform-Tools** | Atual (inclui ADB) | [Platform-Tools / ADB](https://developer.android.com/tools/releases/platform-tools) |
 | **Android Studio** | Opcional | [Baixar Android Studio](https://developer.android.com/studio) |
 
-**Já configurado no repositório (não instalar separadamente):** Gradle Wrapper **8.10.2**, Android Gradle Plugin **8.8.0** e Kotlin Plugin **1.9.22**. O comando `gradlew.bat` usa automaticamente a distribuição do Gradle definida em `gradle/wrapper/gradle-wrapper.properties`.
+**Já configurado no repositório (não instalar separadamente):** Gradle Wrapper **8.11.1**, Android Gradle Plugin **8.10.1** e Kotlin Plugin **1.9.22**. O comando `gradlew.bat` usa automaticamente a distribuição do Gradle definida em `gradle/wrapper/gradle-wrapper.properties`.
 
-A compatibilidade do Android Gradle Plugin está descrita na [documentação do AGP 8.8](https://developer.android.com/build/releases/agp-8-8-0-release-notes). **Evite trocar para outra versão de Java ou Gradle sem verificar a compatibilidade.**
+A compatibilidade do Android Gradle Plugin está descrita na [documentação do AGP 8.10](https://developer.android.com/build/releases/agp-8-10-0-release-notes). **Evite trocar para outra versão de Java ou Gradle sem verificar a compatibilidade.**
 
 ## 2. Preparar o Windows
 
@@ -94,7 +94,7 @@ ANDROID_HOME=C:\Android\Sdk
 6. Reabra o PowerShell e instale os pacotes necessários:
 
 ```powershell
-& "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="$env:ANDROID_HOME" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+& "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="$env:ANDROID_HOME" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
 & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="$env:ANDROID_HOME" --licenses
 ```
 
@@ -106,7 +106,7 @@ Referência: [Gerenciamento de pacotes do Android SDK](https://developer.android
 
 Se já tem Android Studio instalado, pode aproveitar o SDK existente. Abra **More Actions > SDK Manager** (ou **Settings > Languages & Frameworks > Android SDK**) e instale:
 
-- **Android SDK Platform 35**;
+- **Android SDK Platform 36**;
 - **Android SDK Build-Tools 35.0.0**;
 - **Android SDK Platform-Tools**;
 - **Android SDK Command-line Tools**.
@@ -254,7 +254,7 @@ O Logcat contém mensagens do sistema e de outros aplicativos; nem toda linha é
 | Licenças do SDK não aceitas | Execute `sdkmanager --licenses` usando o SDK correto |
 | `Failed to find Build Tools revision 35.0.0` | Instale `build-tools;35.0.0` no SDK Manager |
 | Erro de download de plugins/dependências | Confira conexão, proxy/firewall e acesso a Google Maven/Maven Central |
-| `gradlew.bat` falha na primeira execução | Verifique JDK 17, conexão e o Gradle Wrapper 8.10.2 |
+| `gradlew.bat` falha na primeira execução | Verifique JDK 17, conexão e o Gradle Wrapper 8.11.1 |
 | Falha ao instalar versão Debug sobre Release | Pode haver assinatura diferente; preserve os dados antes de remover uma instalação |
 
 Para reiniciar o serviço do ADB, se necessário:
@@ -264,6 +264,50 @@ adb kill-server
 adb start-server
 adb devices
 ```
+
+---
+
+## 8. Atualização para Android 16 (API 36)
+
+A versão **2.3** do Edukio passou a usar os seguintes parâmetros em `app/build.gradle`:
+
+```gradle
+compileSdk 36
+
+defaultConfig {
+    applicationId 'com.edukio.app'
+    minSdk 26
+    targetSdk 36
+    versionCode 23
+    versionName '2.3'
+}
+```
+
+- `minSdk 26` mantém a compatibilidade a partir do **Android 8.0**, incluindo o Android 15. O `targetSdk 36` prepara o app para as regras do **Android 16**.
+- O projeto usa **JDK 17, Android Gradle Plugin 8.10.1, Gradle Wrapper 8.11.1, Android SDK Platform 36** e **Build-Tools 35.0.0** (padrão suportado pelo AGP 8.10). A instalação opcional de Build-Tools 36.x não é necessária para o wrapper configurado aqui.
+- A biblioteca `androidx.activity:activity:1.9.3` mantém o tratamento do gesto/botão Voltar via `OnBackPressedDispatcher`. Os insets edge-to-edge, barras de status/navegação e sincronização com o tema do site já são tratados pelo `MainActivity`.
+- O parâmetro enviado para a página inicial é `app_version=2.3`. **O repositório do site não precisa ser alterado para esta atualização.**
+
+### Validar a versão antes de publicar
+
+**Atenção:** `versionCode 23` é o próximo número sugerido a partir do código 22 do repositório. **Antes de gerar o AAB, confirme na Google Play Console o maior `versionCode` já enviado (produção, testes ou outros pacotes). Se 23 já tiver sido usado, aumente para um inteiro ainda não utilizado e superior aos códigos anteriores.**
+
+Faça uma compilação Debug, teste preferencialmente em **Android 15 e Android 16** e confira:
+
+1. Início do app, carregamento da WebView, login e permanência da sessão.
+2. Alternância entre tema claro/escuro e cores/ícones das barras de status e navegação, tanto por gestos quanto pelos três botões do Android.
+3. Navegação entre telas, histórico da WebView, botão/gesto **Voltar** e saída do aplicativo.
+4. Câmera, captura de foto, seleção de arquivos, upload múltiplo e permissões.
+5. Conectividade indisponível, página com erro, recuperação automática e botão **Tentar novamente**.
+6. Rotação, diferentes tamanhos de tela e, quando aplicável, tablets.
+
+Depois, abra **Terminal > Run Task... > Gradle: Gerar AAB Release assinado**, usando **o mesmo keystore e alias utilizados nas versões anteriores**, e envie o arquivo `app/build/outputs/bundle/release/app-release.aab` inicialmente para uma faixa de testes na **Google Play Console**. O código de versão e a assinatura devem ser conferidos antes da publicação em produção.
+
+Referências oficiais:
+
+- [Configurar o SDK do Android 16](https://developer.android.com/about/versions/16/setup-sdk).
+- [Mudanças para apps com targetSdk 36](https://developer.android.com/about/versions/16/behavior-changes-16).
+- [Compatibilidade do AGP 8.10](https://developer.android.com/build/releases/agp-8-10-0-release-notes).
 
 ---
 
