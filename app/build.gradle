@@ -38,14 +38,14 @@ if (releaseRequested) {
 
 android {
     namespace 'com.edukio.app'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.edukio.app'
         minSdk 26
-        targetSdk 35
-        versionCode 22
-        versionName '2.2'
+        targetSdk 36
+        versionCode 23
+        versionName '2.3'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -88,6 +88,8 @@ android {
 dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
     implementation 'androidx.core:core-ktx:1.7.0'
+    // OnBackPressedDispatcher compatível com a navegação preditiva do Android 16.
+    implementation 'androidx.activity:activity:1.9.3'
     implementation 'androidx.appcompat:appcompat:1.4.1'
     implementation 'com.google.android.material:material:1.5.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.3'
