@@ -17,7 +17,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Edukio"
-        tools:targetApi="35">
+        tools:targetApi="36">
 
         <provider
             android:name="androidx.core.content.FileProvider"
