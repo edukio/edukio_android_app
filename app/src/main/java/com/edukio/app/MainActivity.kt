@@ -34,7 +34,7 @@ import java.io.File
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        private const val START_URL = "https://app.edukio.com/?app_version=2.2"
+        private const val START_URL = "https://app.edukio.com/?app_version=2.3"
         private const val EDUKIO_SITE = "https://app.edukio.com"
         private const val STARTUP_TIMEOUT_MS = 20_000L
         private const val LIGHT_SYSTEM_BAR_COLOR = "#FFFFFF"
